@@ -1,6 +1,6 @@
 <template>
-  <div class="h-full flex flex-col p-5 overflow-y-auto [&::-webkit-scrollbar]:hidden">
-    <div class="pb-2 z-40">
+  <div class="h-full flex flex-col px-5 pt-5 overflow-y-auto [&::-webkit-scrollbar]:hidden">
+    <div class="pb-2 z-40" id="header">
       <NSpace>
         <NButton v-if="isProxy" secondary type="primary" @click.stop="close" style="--wails-draggable:no-drag">
           {{ t("index.close_grab") }}
@@ -68,6 +68,12 @@
           style="--wails-draggable:no-drag"
       />
     </div>
+    <div class="flex justify-center items-center text-blue-400" id="bottom">
+      <span class="cursor-pointer px-2 py-1" @click="BrowserOpenURL(certUrl)">{{ t('footer.cert_download') }}</span>
+      <span class="cursor-pointer px-2 py-1" @click="BrowserOpenURL('https://github.com/putyy/res-downloader')">{{ t('footer.source_code') }}</span>
+      <span class="cursor-pointer px-2 py-1" @click="BrowserOpenURL('https://github.com/putyy/res-downloader/issues')">{{ t('footer.help') }}</span>
+      <span class="cursor-pointer px-2 py-1" @click="BrowserOpenURL('https://github.com/putyy/res-downloader/releases')">{{ t('footer.update_log') }}</span>
+    </div>
     <Preview v-model:showModal="showPreviewRow" :previewRow="previewRow"/>
     <ShowLoading :loadingText="loadingText" :isLoading="loading"/>
     <ImportJson v-model:showModal="showImport" @submit="handleImport"/>
@@ -76,7 +82,7 @@
 </template>
 
 <script lang="ts" setup>
-import {NButton, NIcon, NImage, NInput, NSpace, NTooltip} from "naive-ui"
+import {NButton, NIcon, NImage, NInput, NSpace, NTooltip, NPopover} from "naive-ui"
 import {computed, h, onMounted, ref, watch} from "vue"
 import type {appType} from "@/types/app"
 import type {DataTableRowKey, ImageRenderToolbarProps} from "naive-ui"
@@ -106,13 +112,16 @@ const eventStore = useEventStore()
 const isProxy = computed(() => {
   return store.isProxy
 })
+const certUrl = computed(() => {
+  return store.baseUrl + "/api/cert"
+})
 const data = ref<any[]>([])
-
+let filterClassify: string[] = []
 const filteredData = computed(() => {
   let result = data.value
 
-  if (resourcesType.value.length > 0 && !resourcesType.value.includes("all")) {
-    result = result.filter(item => resourcesType.value.includes(item.Classify))
+  if (filterClassify.length > 0) {
+    result = result.filter(item => filterClassify.includes(item.Classify))
   }
 
   if (descriptionSearchValue.value) {
@@ -123,9 +132,7 @@ const filteredData = computed(() => {
 })
 
 const store = useIndexStore()
-const tableHeight = computed(() => {
-  return store.globalConfig.Locale === "zh" ? store.tableHeight - 130 : store.tableHeight - 151
-})
+const tableHeight = ref(800)
 const resourcesType = ref<string[]>(["all"])
 
 const classifyAlias: { [key: string]: any } = {
@@ -170,7 +177,7 @@ const columns = ref<any[]>([
   {
     title: computed(() => t("index.domain")),
     key: "Domain",
-    width: 80,
+    width: 90,
   },
   {
     title: computed(() => t("index.type")),
@@ -179,15 +186,12 @@ const columns = ref<any[]>([
     filterOptions: computed(() => Array.from(classify.value).slice(1)),
     filterMultiple: true,
     filter: (value: string, row: appType.MediaInfo) => {
+      if (!filterClassify.includes(value)) filterClassify.push(value)
       return !!~row.Classify.indexOf(String(value))
     },
     render: (row: appType.MediaInfo) => {
-      for (const key in classify.value) {
-        if (classify.value[key].value === row.Classify) {
-          return classify.value[key].label
-        }
-      }
-      return row.Classify
+      const item = classify.value.find(item => item.value === row.Classify)
+      return item ? item.label : row.Classify
     }
   },
   {
@@ -196,12 +200,14 @@ const columns = ref<any[]>([
     width: 80,
     render: (row: appType.MediaInfo) => {
       if (row.Classify === "image") {
-        return h(NImage, {
-          maxWidth: "80px",
+        return h("div", {
+          style: "width: 100%;max-height:80px;overflow:hidden;"
+        }, h(NImage, {
+          objectFit: "contain",
           lazy: true,
           "render-toolbar": renderToolbar,
           src: row.Url
-        })
+        }))
       }
       return [
         h(
@@ -264,26 +270,26 @@ const columns = ref<any[]>([
     }
   },
   {
-    title: () => h('div', { class: 'flex items-center' }, [
+    title: () => h('div', {class: 'flex items-center'}, [
       t('index.description'),
-      h(NTooltip, {
+      h(NPopover, {
         trigger: 'click',
         placement: 'bottom',
-        showArrow: false,
+        showArrow: true,
       }, {
         trigger: () => h(NIcon, {
           size: "18",
           class: "ml-1 text-gray-500 cursor-pointer",
           onClick: (e: MouseEvent) => e.stopPropagation()
         }, h(SearchOutline)),
-        default: () => h('div', { class: 'p-2 w-64' }, [
+        default: () => h('div', {class: 'p-2 w-64'}, [
           h(NInput, {
             value: descriptionSearchValue.value,
             'onUpdate:value': (val: string) => descriptionSearchValue.value = val,
             placeholder: t('index.search_description'),
             clearable: true
           }, {
-            prefix: () => h(NIcon, { component: SearchOutline })
+            prefix: () => h(NIcon, {component: SearchOutline})
           })
         ])
       })
@@ -291,15 +297,10 @@ const columns = ref<any[]>([
     key: "Description",
     width: 150,
     render: (row: appType.MediaInfo, index: number) => {
+      const d = h("div", {class: "ellipsis-2",}, row.Description)
       return h(NTooltip, {trigger: 'hover', placement: 'top'}, {
-        trigger: () => h("div", {}, row.Description.length > 16 ? row.Description.substring(0, 16) + "..." : row.Description),
-        default: () => h("div", {
-          style: {
-            "max-width": " 400px",
-            "white-space": "normal",
-            "word-wrap": "break-word"
-          }
-        }, row.Description)
+        trigger: () => d,
+        default: () => d
       })
     }
   },
@@ -315,6 +316,7 @@ const columns = ref<any[]>([
       return h("a",
           {
             href: "javascript:;",
+            class: "ellipsis-2",
             style: {
               color: "#5a95d0"
             },
@@ -330,7 +332,7 @@ const columns = ref<any[]>([
   },
   {
     key: "actions",
-    width: 210,
+    width: 130,
     render(row: appType.MediaInfo, index: number) {
       return h(Action, {key: index, row: row, index: index, onAction: dataAction})
     },
@@ -353,6 +355,9 @@ let isOpenProxy = false
 
 onMounted(() => {
   try {
+    window.addEventListener("resize", () => {
+      resetTableHeight()
+    })
     loading.value = true
     handleInstall().then((is: boolean) => {
       loading.value = false
@@ -374,12 +379,16 @@ onMounted(() => {
   if (cache) {
     data.value = JSON.parse(cache)
   }
-
+  resetTableHeight()
   eventStore.addHandle({
     type: "newResources",
     event: (res: appType.MediaInfo) => {
-      data.value.push(res)
-      localStorage.setItem("resources-data", JSON.stringify(data.value))
+      if (store.globalConfig.InsertTail) {
+        data.value.push(res)
+      } else {
+        data.value.unshift(res)
+      }
+      cacheData()
     }
   })
 
@@ -388,34 +397,25 @@ onMounted(() => {
     event: (res: { Id: string, SavePath: string, Status: string, Message: string }) => {
       switch (res.Status) {
         case "running":
-          for (const i in data.value) {
-            if (data.value[i].Id === res.Id) {
-              data.value[i].SavePath = res.Message
-              data.value[i].Status = "running"
-              break
-            }
-          }
+          updateItem(res.Id, item => {
+            item.SavePath = res.Message
+            item.Status = 'running'
+          })
           break
         case "done":
-          for (const i in data.value) {
-            if (data.value[i].Id === res.Id) {
-              data.value[i].SavePath = res.SavePath
-              data.value[i].Status = "done"
-              break
-            }
-          }
-          localStorage.setItem("resources-data", JSON.stringify(data.value))
+          updateItem(res.Id, item => {
+            item.SavePath = res.SavePath
+            item.Status = 'done'
+          })
+          cacheData()
           checkQueue()
           break
         case "error":
-          for (const i in data.value) {
-            if (data.value[i].Id === res.Id) {
-              data.value[i].SavePath = res.Message
-              data.value[i].Status = "error"
-              break
-            }
-          }
-          localStorage.setItem("resources-data", JSON.stringify(data.value))
+          updateItem(res.Id, item => {
+            item.SavePath = res.Message
+            item.Status = 'error'
+          })
+          cacheData()
           checkQueue()
           break
       }
@@ -433,6 +433,28 @@ watch(resourcesType, (n, o) => {
   localStorage.setItem("resources-type", JSON.stringify({res: resourcesType.value}))
   appApi.setType(resourcesType.value)
 })
+
+const updateItem = (id: string, updater: (item: any) => void)=>{
+  const item = data.value.find(i => i.Id === id)
+  if (item) updater(item)
+}
+
+function cacheData() {
+  localStorage.setItem("resources-data", JSON.stringify(data.value))
+}
+
+const resetTableHeight = () => {
+  try {
+    const headerHeight = document.getElementById("header")?.offsetHeight || 0
+    const bottomHeight = document.getElementById("bottom")?.offsetHeight || 0
+    // @ts-ignore
+    const theadHeight = document.getElementsByClassName("n-data-table-thead")[0]?.offsetHeight || 0
+    const height = document.documentElement.clientHeight || window.innerHeight
+    tableHeight.value = height - headerHeight - bottomHeight - theadHeight - 20
+  } catch (e) {
+    console.log(e)
+  }
+}
 
 const buildClassify = () => {
   const mimeMap = store.globalConfig.MimeMap ?? {}
@@ -483,10 +505,8 @@ const dataAction = (row: appType.MediaInfo, index: number, type: string) => {
       break
     case "delete":
       appApi.delete({sign: row.UrlSign}).then(() => {
-        let arr = data.value
-        arr.splice(index, 1)
-        data.value = arr
-        localStorage.setItem("resources-data", JSON.stringify(data.value))
+        data.value.splice(index, 1)
+        cacheData()
       })
       break
   }
@@ -513,6 +533,7 @@ const handleCheck = (rowKeys: DataTableRowKey[]) => {
 
 const batchDown = async () => {
   if (checkedRowKeysValue.value.length <= 0) {
+    window?.$message?.error(t("index.use_data"))
     return
   }
 
@@ -521,11 +542,12 @@ const batchDown = async () => {
     return
   }
 
-  for (let i = 0; i < data.value.length; i++) {
-    if (checkedRowKeysValue.value.includes(data.value[i].Id) && data.value[i].Classify != "live" && data.value[i].Classify != "m3u8") {
-      download(data.value[i], i)
+  data.value.forEach((item, index) => {
+    if (checkedRowKeysValue.value.includes(item.Id) && item.Classify !== 'live' && item.Classify !== 'm3u8') {
+      download(item, index)
     }
-  }
+  })
+
   checkedRowKeysValue.value = []
 }
 
@@ -534,16 +556,19 @@ const batchExport = () => {
     window?.$message?.error(t("index.use_data"))
     return
   }
+
   if (!store.globalConfig.SaveDirectory) {
     window?.$message?.error(t("index.save_path_empty"))
     return
   }
+
   loadingText.value = t("common.loading")
   loading.value = true
-  let jsonData = []
-  for (let i = 0; i < data.value.length; i++) {
-    jsonData.push(encodeURIComponent(JSON.stringify(data.value[i])))
-  }
+
+  const jsonData = data.value
+      .filter(item => checkedRowKeysValue.value.includes(item.Id))
+      .map(item => encodeURIComponent(JSON.stringify(item)))
+
   appApi.batchExport({content: jsonData.join("\n")}).then((res: appType.Res) => {
     loading.value = false
     if (res.code === 0) {
@@ -558,12 +583,7 @@ const batchExport = () => {
 }
 
 const uint8ArrayToBase64 = (bytes: any) => {
-  let binary = ''
-  const len = bytes.byteLength
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i])
-  }
-  return window.btoa(binary)
+  return window.btoa(Array.from(bytes, (byte: any) => String.fromCharCode(byte)).join(''))
 }
 
 const download = (row: appType.MediaInfo, index: number) => {
@@ -639,6 +659,21 @@ const close = () => {
 }
 
 const clear = () => {
+  if (checkedRowKeysValue.value.length > 0) {
+    let newData = [] as any[]
+    data.value.forEach((item, index) => {
+      if (checkedRowKeysValue.value.includes(item.Id)) {
+        appApi.delete({sign: item.UrlSign})
+      } else {
+        newData.push(item)
+      }
+    })
+    data.value = newData
+    checkedRowKeysValue.value = []
+    cacheData()
+    return
+  }
+
   data.value = []
   localStorage.setItem("resources-data", "")
   appApi.clear()
@@ -669,7 +704,7 @@ const decodeWxFile = (row: appType.MediaInfo, index: number) => {
         }
         data.value[index].SavePath = res.data.save_path
         data.value[index].Status = "done"
-        localStorage.setItem("resources-data", JSON.stringify(data.value))
+        cacheData()
         window?.$message?.success(t("index.video_decode_success"))
       })
     }
@@ -681,6 +716,7 @@ const handleImport = (content: string) => {
     window?.$message?.error(t("view.import_empty"))
     return
   }
+  let newItems = [] as any[]
   content.split("\n").forEach((line, index) => {
     try {
       let res = JSON.parse(decodeURIComponent(line))
@@ -688,13 +724,16 @@ const handleImport = (content: string) => {
         res.Id = res.Id + Math.floor(Math.random() * 100000)
         res.SavePath = ""
         res.Status = "ready"
-        data.value.unshift(res)
+        newItems.push(res)
       }
     } catch (e) {
       console.log(e)
     }
   })
-  localStorage.setItem("resources-data", JSON.stringify(data.value))
+  if (newItems.length > 0) {
+    data.value = [...newItems, ...data.value]
+  }
+  cacheData()
   showImport.value = false
 }
 
@@ -736,3 +775,12 @@ const handleInstall = async () => {
   return false
 }
 </script>
+<style>
+.ellipsis-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+</style>

@@ -65,11 +65,13 @@
     "handle": "Post Processing",
     "direct_download": "Download",
     "download_success": "Download Success",
+    "download_no_tip": "This type of download is not supported yet. Please copy the link and use other tools to download.",
     "copy_link": "Copy Link",
     "copy_data": "Copy Data",
     "open_link": "Open Link",
     "open_file": "Open File",
     "delete_row": "Delete Row",
+    "more_operation": "More Operations",
     "video_decode": "WxDecrypt",
     "video_decode_loading": "Decrypting",
     "video_decode_no": "Cannot Decrypt",
@@ -94,6 +96,8 @@
     "quality_tip": "Effective for video accounts",
     "full_intercept": "Full Intercept",
     "full_intercept_tip": "Whether to fully intercept WeChat video accounts, No: only intercept video details",
+    "insert_tail": "insert tail",
+    "insert_tail_tip": "Intercept whether new data is added to the end of the list",
     "upstream_proxy": "Upstream Proxy",
     "upstream_proxy_tip": "For combining with other proxy tools, format: http://username:password@your.proxy.server:port",
     "download_proxy": "Download Proxy",
@@ -107,7 +111,9 @@
     "mime_map": "Intercept Rules",
     "mime_map_tip": "JSON format, keep default if unsure, please restart software after modification",
     "port_format_error": "port format error",
-    "host_format_error": "host format error"
+    "host_format_error": "host format error",
+    "basic_setting": "Basic Setting",
+    "advanced_setting": "Advanced Setting"
   },
   "footer": {
     "title": "About Us",
