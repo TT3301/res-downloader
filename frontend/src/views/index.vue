@@ -10,22 +10,23 @@
         </NButton>
         <NSelect style="min-width: 100px;--wails-draggable:no-drag" :placeholder="t('index.grab_type')" v-model:value="resourcesType" multiple clearable
                  :max-tag-count="3" :options="classify"></NSelect>
-        <n-popconfirm
-            @positive-click="clear"
-        >
-          <template #trigger>
-            <NButton tertiary type="error" style="--wails-draggable:no-drag">
-              <template #icon>
-                <n-icon>
-                  <TrashOutline/>
-                </n-icon>
-              </template>
-              {{ t("index.clear_list") }}
-            </NButton>
-          </template>
-          {{ t("index.clear_list_tip") }}
-        </n-popconfirm>
         <NButtonGroup style="--wails-draggable:no-drag">
+          <n-popconfirm
+              @positive-click="clear"
+          >
+            <template #trigger>
+              <NButton tertiary type="error" style="--wails-draggable:no-drag">
+                <template #icon>
+                  <n-icon>
+                    <TrashOutline/>
+                  </n-icon>
+                </template>
+                {{ t("index.clear_list") }}
+              </NButton>
+            </template>
+            {{ t("index.clear_list_tip") }}
+          </n-popconfirm>
+
           <NButton tertiary type="primary" @click.stop="batchDown">
             <template #icon>
               <n-icon>
@@ -34,21 +35,48 @@
             </template>
             {{ t('index.batch_download') }}
           </NButton>
-          <NButton tertiary type="warning" @click.stop="batchExport">
-            <template #icon>
-              <n-icon>
-                <ArrowRedoCircleOutline/>
-              </n-icon>
-            </template>
-            {{ t('index.batch_export') }}
-          </NButton>
-          <NButton tertiary type="info" @click.stop="showImport=true">
-            <template #icon>
-              <n-icon>
-                <ServerOutline/>
-              </n-icon>
-            </template>
-            {{ t('index.batch_import') }}
+          <NButton tertiary type="info">
+            <NPopover placement="bottom" trigger="hover">
+              <template #trigger>
+                <NIcon size="18" class="">
+                  <Apps/>
+                </NIcon>
+              </template>
+              <div class="flex flex-col">
+                <NButton tertiary type="error" @click.stop="batchCancel" class="my-1">
+                  <template #icon>
+                    <n-icon>
+                      <CloseOutline/>
+                    </n-icon>
+                  </template>
+                  {{ t('index.cancel_down') }}
+                </NButton>
+                <NButton tertiary type="warning" @click.stop="batchExport()" class="my-1">
+                  <template #icon>
+                    <n-icon>
+                      <ArrowRedoCircleOutline/>
+                    </n-icon>
+                  </template>
+                  {{ t('index.batch_export') }}
+                </NButton>
+                <NButton tertiary type="info" @click.stop="showImport=true" class="my-1">
+                  <template #icon>
+                    <n-icon>
+                      <ServerOutline/>
+                    </n-icon>
+                  </template>
+                  {{ t('index.batch_import') }}
+                </NButton>
+                <NButton tertiary type="primary" @click.stop="batchExport('url')" class="my-1">
+                  <template #icon>
+                    <n-icon>
+                      <ArrowRedoCircleOutline/>
+                    </n-icon>
+                  </template>
+                  {{ t('index.export_url') }}
+                </NButton>
+              </div>
+            </NPopover>
           </NButton>
         </NButtonGroup>
       </NSpace>
@@ -105,11 +133,17 @@ import {
   ArrowRedoCircleOutline,
   ServerOutline,
   SearchOutline,
-  TrashOutline
+  Apps,
+  TrashOutline, CloseOutline
 } from "@vicons/ionicons5"
+import { useDialog } from 'naive-ui'
+import * as bind from "../../wailsjs/go/core/Bind"
+import {Quit} from "../../wailsjs/runtime"
+import {DialogOptions} from "naive-ui/es/dialog/src/DialogProvider"
 
 const {t} = useI18n()
 const eventStore = useEventStore()
+const dialog = useDialog()
 const isProxy = computed(() => {
   return store.isProxy
 })
@@ -353,6 +387,7 @@ const showPassword = ref(false)
 const downloadQueue = ref<appType.MediaInfo[]>([])
 let activeDownloads = 0
 let isOpenProxy = false
+let isInstall = false
 
 onMounted(() => {
   try {
@@ -361,7 +396,15 @@ onMounted(() => {
     })
     loading.value = true
     handleInstall().then((is: boolean) => {
+      isInstall = true
       loading.value = false
+    })
+
+    checkLoading()
+    watch(showPassword, ()=>{
+      if (!showPassword.value){
+        checkLoading()
+      }
     })
   } catch (e) {
     window.$message?.error(JSON.stringify(e), {duration: 5000})
@@ -483,16 +526,16 @@ const dataAction = (row: appType.MediaInfo, index: number, type: string) => {
     case "cancel":
       if (row.Status === "running") {
         appApi.cancel({id: row.Id}).then((res)=>{
-          if (res.code === 0) {
-            window?.$message?.error(res.message)
-            return
-          }
           updateItem(row.Id, item => {
             item.Status = 'ready'
             item.SavePath = ''
           })
           cacheData()
           checkQueue()
+          if (res.code === 0) {
+            window?.$message?.error(res.message)
+            return
+          }
         })
       }
       break
@@ -572,7 +615,25 @@ const batchDown = async () => {
   checkedRowKeysValue.value = []
 }
 
-const batchExport = () => {
+const batchCancel = () =>{
+  if (checkedRowKeysValue.value.length <= 0) {
+    window?.$message?.error(t("index.use_data"))
+    return
+  }
+
+  data.value.forEach(async (item, index) => {
+    if (checkedRowKeysValue.value.includes(item.Id) && item.Status === "running") {
+      appApi.cancel({id: item.Id})
+      data.value[index].Status = 'ready'
+      data.value[index].SavePath = ''
+    }
+  })
+  checkedRowKeysValue.value = []
+  cacheData()
+  checkQueue()
+}
+
+const batchExport = (type?: string) => {
   if (checkedRowKeysValue.value.length <= 0) {
     window?.$message?.error(t("index.use_data"))
     return
@@ -586,9 +647,13 @@ const batchExport = () => {
   loadingText.value = t("common.loading")
   loading.value = true
 
-  const jsonData = data.value
-      .filter(item => checkedRowKeysValue.value.includes(item.Id))
-      .map(item => encodeURIComponent(JSON.stringify(item)))
+  let jsonData = data.value.filter(item => checkedRowKeysValue.value.includes(item.Id))
+
+  if (type === "url"){
+    jsonData = jsonData.map(item => item.Url)
+  } else{
+    jsonData = jsonData.map(item => encodeURIComponent(JSON.stringify(item)))
+  }
 
   appApi.batchExport({content: jsonData.join("\n")}).then((res: appType.Res) => {
     loading.value = false
@@ -794,6 +859,29 @@ const handleInstall = async () => {
     showPassword.value = true
   }
   return false
+}
+
+const checkLoading = ()=>{
+  setTimeout(()=>{
+    if (loading.value && !isInstall && !showPassword.value) {
+      dialog.warning({
+        title: t("index.start_err_tip"),
+        content: t("index.start_err_content"),
+        positiveText: t("index.start_err_positiveText"),
+        negativeText: t("index.start_err_negativeText"),
+        draggable: false,
+        closeOnEsc: false,
+        closable: false,
+        maskClosable: false,
+        onPositiveClick: () => {
+          bind.ResetApp()
+        },
+        onNegativeClick: () => {
+          Quit()
+        }
+      } as DialogOptions)
+    }
+  }, 6000)
 }
 </script>
 <style>
