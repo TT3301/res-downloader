@@ -151,6 +151,7 @@ import ImportJson from "@/components/ImportJson.vue"
 import {useEventStore} from "@/stores/event"
 import {BrowserOpenURL, ClipboardSetText} from "../../wailsjs/runtime"
 import Password from "@/components/Password.vue"
+import ShowOrEdit from "@/components/ShowOrEdit.vue"
 import {useI18n} from 'vue-i18n'
 import {
   DownloadOutline,
@@ -351,7 +352,7 @@ const columns = ref<any[]>([
       }, {
         trigger: () => h(NIcon, {
           size: "18",
-          class: "ml-1 text-gray-500 cursor-pointer",
+          class: `ml-1 cursor-pointer ${descriptionSearchValue.value ? "text-green-600": "text-gray-500"}`,
           onClick: (e: MouseEvent) => e.stopPropagation()
         }, h(SearchOutline)),
         default: () => h('div', {class: 'p-2 w-64'}, [
@@ -369,10 +370,12 @@ const columns = ref<any[]>([
     key: "Description",
     width: 150,
     render: (row: appType.MediaInfo, index: number) => {
-      const d = h("div", {class: "ellipsis-2",}, row.Description)
-      return h(NTooltip, {trigger: 'hover', placement: 'top'}, {
-        trigger: () => d,
-        default: () => d
+      return h(ShowOrEdit, {
+        value: row.Description,
+        onUpdateValue(v: string) {
+          data.value[index].Description = v
+          cacheData()
+        }
       })
     }
   },
@@ -629,7 +632,11 @@ const dataAction = (row: appType.MediaInfo, index: number, type: string) => {
       decodeWxFile(row, index)
       break
     case "delete":
-      appApi.delete({sign: row.UrlSign}).then(() => {
+      if (row.Status === "pending" || row.Status === "running") {
+        window?.$message?.error(t("index.delete_tip"))
+        return
+      }
+      appApi.delete({sign: [row.UrlSign]}).then(() => {
         data.value.splice(index, 1)
         cacheData()
       })
@@ -813,25 +820,30 @@ const close = () => {
   store.unsetProxy()
 }
 
-const clear = () => {
+const clear = async () => {
+  const newData = [] as any[]
+  const signs: string[] = []
   if (checkedRowKeysValue.value.length > 0) {
-    let newData = [] as any[]
     data.value.forEach((item, index) => {
-      if (checkedRowKeysValue.value.includes(item.Id)) {
-        appApi.delete({sign: item.UrlSign})
+      if (checkedRowKeysValue.value.includes(item.Id) && item.Status !== "pending" && item.Status !== "running") {
+        signs.push(item.UrlSign)
       } else {
         newData.push(item)
       }
     })
-    data.value = newData
     checkedRowKeysValue.value = []
-    cacheData()
-    return
+  } else {
+    data.value.forEach((item, index) => {
+      if (item.Status === "pending" || item.Status === "running") {
+        newData.push(item)
+      } else {
+        signs.push(item.UrlSign)
+      }
+    })
   }
-
-  data.value = []
-  localStorage.setItem("resources-data", "")
-  appApi.clear()
+  await appApi.delete({sign: signs})
+  data.value = newData
+  cacheData()
 }
 
 const decodeWxFile = (row: appType.MediaInfo, index: number) => {
@@ -953,12 +965,3 @@ const checkLoading = () => {
   }, 6000)
 }
 </script>
-<style>
-.ellipsis-2 {
-  display: -webkit-box;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-</style>
